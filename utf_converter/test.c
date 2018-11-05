@@ -22,17 +22,17 @@ int main(int argc, char *argv[]) {
     printf("original string:\n");
     print_utf(str, i);
 
-    size_t utf32_len = to_utf32(str, NULL);
-    if (utf32_len == NPOS) {
-        fprintf(stderr, "Error while getting utf32_str size: %s\n", strerror(errno));
+    int utf32_len = to_utf32(str, NULL);
+    if (utf32_len < 0) {
+        fprintf(stderr, "Error while getting utf32_str size: %s\n", e_to_str(utf32_len));
         ret = 1;
         goto cleanup;
     }
 
     utf32_str = (utf32_char_t *)malloc(utf32_len * sizeof(*utf32_str));
-    size_t check = to_utf32(str, utf32_str);
-    if (check == NPOS) {
-        fprintf(stderr, "Error while converting str to utf32: %s\n", strerror(errno));
+    int check = to_utf32(str, utf32_str);
+    if (check < 0) {
+        fprintf(stderr, "Error while converting str to utf32: %s\n", e_to_str(check));
         ret = 2;
         goto cleanup;
     }
@@ -40,17 +40,17 @@ int main(int argc, char *argv[]) {
     printf("utf32 converted string:\n");
     print_utf(utf32_str, i);
 
-    size_t utf8_len = to_utf8(utf32_str, NULL);
-    if (utf8_len == NPOS) {
-        fprintf(stderr, "Error while getting twice converted str size: %s\n", strerror(errno));
+    int utf8_len = to_utf8(utf32_str, NULL);
+    if (utf8_len < 0) {
+        fprintf(stderr, "Error while getting twice converted str size: %s\n", e_to_str(utf8_len));
         ret = 3;
         goto cleanup;
     }
 
     utf8_str = (utf8_char_t *)malloc(utf8_len * sizeof(*utf8_str));
     check = to_utf8(utf32_str, utf8_str);
-    if (check == NPOS) {
-        fprintf(stderr, "Error while converting string to utf8: %s\n", strerror(errno));
+    if (check < 0) {
+        fprintf(stderr, "Error while converting string to utf8: %s\n", e_to_str(check));
         ret = 4;
         goto cleanup;
     }
