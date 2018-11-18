@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 static const char HEADER[] =
@@ -79,12 +80,13 @@ static int get_user(const char *pid, struct proc *proc) {
 
 static int scanf_from_file(const char *file, const char *fmt, const int count,
                            ...) {
+  int ret = 0;
   int fd = -1;
   if ((fd = open(file, O_RDONLY)) < 0) {
     fprintf(stderr, "Failed to open %s for read: %s\n", file, strerror(errno));
-    int ret = errno;
+    ret = errno;
     errno = 0;
-    return ret;
+    goto scanf_from_file_cleanup;
   }
 
   static const size_t BUF_SIZE = 1024;
@@ -92,9 +94,9 @@ static int scanf_from_file(const char *file, const char *fmt, const int count,
   ssize_t rd = 0;
   if ((rd = read(fd, (void *)buf, BUF_SIZE)) < 0) {
     fprintf(stderr, "Failed to read from %s: %s\n", file, strerror(errno));
-    int ret = errno;
+    ret = errno;
     errno = 0;
-    return ret;
+    goto scanf_from_file_cleanup;
   }
   rd = (rd == BUF_SIZE) ? rd - 1 : rd;
   buf[rd] = '\0';
@@ -103,12 +105,16 @@ static int scanf_from_file(const char *file, const char *fmt, const int count,
   va_start(args, count);
   if (vsscanf(buf, fmt, args) < count) {
     fprintf(stderr, "Wrong format of %s: %s\n", file, strerror(errno));
-    int ret = errno;
+    ret = errno;
     errno = 0;
-    return ret;
+    goto scanf_from_file_cleanup;
   }
 
-  return 0;
+scanf_from_file_cleanup:
+  if (fd >= 0)
+    close(fd);
+
+  return ret;
 }
 
 static int get_proc_stat(const char *pid, struct proc_stat *stat) {
@@ -174,9 +180,36 @@ static int get_mem(struct proc_stat *proc_stat, struct proc *proc) {
   return 0;
 }
 
-static int get_started(const struct proc_stat *proc_stat, struct proc *proc) {
-  strncpy(proc->start, "unknown time", START_SIZE);
+static int get_started_time(const char *started, struct proc *proc) {
+  strncpy(proc->start, started + 11, START_SIZE);
   proc->start[START_SIZE - 1] = '\0';
+  return 0;
+}
+
+static int get_started_date(const char *started, struct proc *proc) {
+  strncpy(proc->start, started + 4, 3);     // mmm
+  strncpy(proc->start + 3, started + 8, 2); // dd
+  proc->start[START_SIZE - 1] = '\0';
+  return 0;
+}
+
+static int get_started(const struct proc_stat *proc_stat, struct proc *proc) {
+  int ret = 0;
+  time_t curtime = time(NULL);
+  int uptime = 0;
+  if ((ret = get_uptime(&uptime)) != 0)
+    return ret;
+
+  time_t sys_starttime = curtime - uptime;
+  time_t proc_starttime = sys_starttime + proc_stat->starttime;
+  char *started = ctime(&proc_starttime);
+
+  static const time_t SECONDS_IN_DAY = 24 * 60 * 60;
+  if (curtime - proc_starttime > SECONDS_IN_DAY)
+    ret = get_started_date(started, proc);
+  else
+    ret = get_started_time(started, proc);
+
   return 0;
 }
 
