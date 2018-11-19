@@ -13,6 +13,14 @@
 #include <time.h>
 #include <unistd.h>
 
+#define BUF_SIZE 1024
+
+#define USER_SIZE 1024
+#define TTY_SIZE 32
+#define START_SIZE 6
+#define TIME_SIZE 32
+#define COMMAND_SIZE 1024
+
 static const char HEADER[] =
     "USER\tPID\t%%CPU\t%%MEM\tVSZ\tRSS\tTTY\tSTAT\tSTART\tTIME\tCOMMAND\n";
 
@@ -25,11 +33,6 @@ static int ispid(const char *d_name) {
 }
 
 // output data
-const size_t USER_SIZE = 1024;
-const size_t TTY_SIZE = 32;
-const size_t START_SIZE = 6;
-const size_t TIME_SIZE = 32;
-const size_t COMMAND_SIZE = 1024;
 struct proc {
   char user[USER_SIZE];
   int pid;
@@ -54,26 +57,25 @@ struct proc_stat {
 };
 
 static int get_user(const char *pid, struct proc *proc) {
+  int ret = 0;
   char dir[PATH_MAX];
   snprintf(dir, sizeof(dir), "/proc/%s", pid);
 
   struct stat dir_stat;
   if (stat(dir, &dir_stat) != 0) {
-    fprintf(stderr, "Failed to get %s stat: %s\n", dir, strerror(errno));
-    int ret = errno;
-    errno = 0;
+    ret = errno;
+    fprintf(stderr, "Failed to get %s stat: %s\n", dir, strerror(ret));
     return ret;
   }
 
   struct passwd *pwd;
   if ((pwd = getpwuid(dir_stat.st_uid)) == NULL) {
+    ret = errno;
     fprintf(stderr, "Failed to get passwd for %s owner: %s\n", dir,
-            strerror(errno));
-    int ret = errno;
-    errno = 0;
+            strerror(ret));
     return ret;
   }
-  strncpy(proc->user, pwd->pw_name, USER_SIZE);
+  snprintf(proc->user, sizeof(proc->user), "%s", pwd->pw_name);
 
   return 0;
 }
@@ -83,19 +85,16 @@ static int scanf_from_file(const char *file, const char *fmt, const int count,
   int ret = 0;
   int fd = -1;
   if ((fd = open(file, O_RDONLY)) < 0) {
-    fprintf(stderr, "Failed to open %s for read: %s\n", file, strerror(errno));
     ret = errno;
-    errno = 0;
+    fprintf(stderr, "Failed to open %s for read: %s\n", file, strerror(ret));
     goto scanf_from_file_cleanup;
   }
 
-  static const size_t BUF_SIZE = 1024;
   char buf[BUF_SIZE];
   ssize_t rd = 0;
-  if ((rd = read(fd, (void *)buf, BUF_SIZE)) < 0) {
-    fprintf(stderr, "Failed to read from %s: %s\n", file, strerror(errno));
+  if ((rd = read(fd, buf, BUF_SIZE)) < 0) {
     ret = errno;
-    errno = 0;
+    fprintf(stderr, "Failed to read from %s: %s\n", file, strerror(ret));
     goto scanf_from_file_cleanup;
   }
   rd = (rd == BUF_SIZE) ? rd - 1 : rd;
@@ -104,9 +103,8 @@ static int scanf_from_file(const char *file, const char *fmt, const int count,
   va_list args;
   va_start(args, count);
   if (vsscanf(buf, fmt, args) < count) {
-    fprintf(stderr, "Wrong format of %s: %s\n", file, strerror(errno));
     ret = errno;
-    errno = 0;
+    fprintf(stderr, "Wrong format of %s: %s\n", file, strerror(ret));
     goto scanf_from_file_cleanup;
   }
 
@@ -181,8 +179,7 @@ static int get_mem(struct proc_stat *proc_stat, struct proc *proc) {
 }
 
 static int get_started_time(const char *started, struct proc *proc) {
-  strncpy(proc->start, started + 11, START_SIZE);
-  proc->start[START_SIZE - 1] = '\0';
+  snprintf(proc->start, sizeof(proc->start), "%s", started + 11); // hh:mm
   return 0;
 }
 
@@ -289,7 +286,6 @@ int main(void) {
 
   if ((proc = opendir("/proc")) == NULL) {
     ret = errno;
-    errno = 0;
     fprintf(stderr, "Failed to open /proc: %s\n", strerror(ret));
     goto cleanup;
   }
